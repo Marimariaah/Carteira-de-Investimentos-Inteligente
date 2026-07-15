@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 use axum::Router;
+use sqlx::{PgPool, database};
 use tokio::{net::TcpListener, sync::Mutex}; 
 use tracing::info;
 use tracing_subscriber::{Layer, fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
@@ -8,13 +9,18 @@ use crate::{models::Asset};
 #[derive(Clone)]
 pub struct AppState {
   pub assets: Arc<Mutex<HashMap<i64, Asset>>>,
+  pub db: PgPool,
 }
 
 impl AppState {
-    fn new() -> Self {
-        Self {
-            assets: Default::default(),
-        }
+    pub async fn new() -> color_eyre::Result<Self> {
+        let database_url = std::env::var("DATABASE_URL")?;
+        let db = PgPool::connect(&database_url).await?;
+        
+        Ok(Self {
+        assets: Default::default(),
+        db,
+        })
     }
 }
 
@@ -28,10 +34,12 @@ impl App {
 
     tracing_subscriber::registry().with(layer).init();
 
+    let state = AppState::new().await?;
+
     let listener = TcpListener::bind("0.0.0.0:3000").await?;
     let router = Router::new()
     .nest("/api", crate::routes::api::router())
-    .with_state(AppState::new());
+    .with_state(state);
 
     info!("Servidor rodando em http://localhost:3000");
     axum::serve(listener, router).await?;
