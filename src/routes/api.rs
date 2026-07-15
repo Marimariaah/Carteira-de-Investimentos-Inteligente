@@ -1,16 +1,18 @@
+use std::{collections::HashMap};
+
 use axum::{Json, Router, extract::State, routing::get};
 use serde::Deserialize;
 
-use crate::{app::AppState, models::Asset};
+use crate::{app::AppState, auth::admin::AdminAuth, models::Asset};
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/assets", get(list_assets)
-        .post(create_asset))
+        .post(create_asset).patch(update_asset))
 }
 
 #[tracing::instrument(skip_all)]
-async fn list_assets(state: State<AppState>) -> Json<Vec<Asset>> {
+async fn list_assets(state: State<AppState>) -> Json<HashMap<i64, Asset>> {
     let assets = state.assets.lock().await;
      Json(assets.clone())
 } 
@@ -26,7 +28,7 @@ async fn create_asset(state: State<AppState>, Json(request) : Json<CreateAssetRe
     let mut assets = state.assets.lock().await;
      
     let id = assets
-    .iter()
+    .values()
     .map(|asset| asset.id)
     .max()
     .unwrap_or_default() + 1;
@@ -37,7 +39,37 @@ async fn create_asset(state: State<AppState>, Json(request) : Json<CreateAssetRe
         unit_value: request.unit_value,
     };
 
-    assets.push(new_asset.clone());
+    assets.insert(id, new_asset.clone());
 
     Json(new_asset)
 } 
+
+#[derive(Deserialize)]
+struct UpdateAssetRequest {
+    id: i64,
+    name: Option<String>,
+    unit_value: Option<f64>,
+}
+#[tracing::instrument(skip_all)]
+async fn update_asset(
+    _admin: AdminAuth,
+    state: State<AppState>,
+    Json(request): Json<UpdateAssetRequest>,
+) -> Result<Json<Asset>, &'static str> {
+    let mut assets = state.assets.lock().await;
+
+    // Buscando o ativo (parênteses corrigidos aqui 👇)
+    let Some(existing_asset) = assets.get_mut(&request.id) else {
+        return Err("Asset not found");
+    };
+
+    if let Some(new_name) = request.name {
+        existing_asset.name = new_name;
+    }
+
+    if let Some(new_unit_value) = request.unit_value {
+        existing_asset.unit_value = new_unit_value;
+    }
+
+    Ok(Json(existing_asset.clone()))
+}

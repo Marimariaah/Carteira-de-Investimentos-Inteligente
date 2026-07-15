@@ -1,4 +1,4 @@
-use std::sync::{Arc};
+use std::{collections::HashMap, sync::Arc};
 use axum::Router;
 use tokio::{net::TcpListener, sync::Mutex}; 
 use tracing::info;
@@ -7,7 +7,7 @@ use crate::{models::Asset};
 
 #[derive(Clone)]
 pub struct AppState {
-  pub assets: Arc<Mutex<Vec<Asset>>>,
+  pub assets: Arc<Mutex<HashMap<i64, Asset>>>,
 }
 
 impl AppState {
