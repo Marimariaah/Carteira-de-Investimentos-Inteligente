@@ -2,7 +2,6 @@ use axum::{Json, response::IntoResponse};
 use serde::Serialize;
 use thiserror::Error;
 
-
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("Missing authorization header")]
@@ -13,6 +12,9 @@ pub enum AppError {
 
     #[error("Asset does not exist")]
     AssetDoesNotExist,
+
+    #[error(transparent)]
+    DatabaseError(#[from] sqlx::Error),
 }
 
 #[derive(Serialize)]
@@ -29,6 +31,7 @@ impl IntoResponse for AppError {
             Self::MissingAuthorization => axum::http::StatusCode::BAD_REQUEST,
             Self::InvalidCredentials => axum::http::StatusCode::UNAUTHORIZED,
             Self::AssetDoesNotExist => axum::http::StatusCode::NOT_FOUND,
+            Self::DatabaseError(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(error_response)).into_response()
     }

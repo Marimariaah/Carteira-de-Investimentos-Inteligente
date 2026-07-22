@@ -17,7 +17,7 @@ impl FromRequestParts<AppState> for AdminAuth {
             return Err(AppError::MissingAuthorization);
         };
 
-        if auth != ADMIN_SECRET_KEY {
+        if auth == ADMIN_SECRET_KEY {
             Ok(AdminAuth)
         } else {
             Err(AppError::InvalidCredentials)

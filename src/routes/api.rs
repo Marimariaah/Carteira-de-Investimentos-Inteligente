@@ -1,9 +1,7 @@
-use std::{collections::HashMap};
-
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Json, Router, routing::get};
 use serde::Deserialize;
 
-use crate::{app::AppState, auth::admin::AdminAuth, error::AppError, models::Asset};
+use crate::{app::AppState, auth::admin::AdminAuth, error::AppError, models::Asset, repository::{Repository}};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -12,10 +10,10 @@ pub fn router() -> Router<AppState> {
 }
 
 #[tracing::instrument(skip_all)]
-async fn list_assets(state: State<AppState>) -> Json<HashMap<i64, Asset>> {
-    let assets = state.assets.lock().await;
-     Json(assets.clone())
-} 
+async fn list_assets(repository: Repository) -> Result<Json<Vec<Asset>>, AppError> {
+    let assets = repository.list_assets().await?;
+    Ok(Json(assets))
+}
 
 #[derive(Deserialize)]
 struct CreateAssetRequest {
@@ -24,24 +22,16 @@ struct CreateAssetRequest {
 }
 
 #[tracing::instrument(skip_all)]
-async fn create_asset(state: State<AppState>, Json(request) : Json<CreateAssetRequest>) -> Json<Asset> {
-    let mut assets = state.assets.lock().await;
-     
-    let id = assets
-    .values()
-    .map(|asset| asset.id)
-    .max()
-    .unwrap_or_default() + 1;
-
-    let new_asset = Asset {
-        id,
-        name: request.name,
-        unit_value: request.unit_value,
-    };
-
-    assets.insert(id, new_asset.clone());
-
-    Json(new_asset)
+async fn create_asset(
+    _: AdminAuth,
+    repository: Repository, 
+    Json(request) : Json<CreateAssetRequest>)
+    -> Result<Json<Asset>, AppError> {
+    let new_asset = repository
+    .create_asset(request.name, request.unit_value)
+    .await?;
+    
+    Ok(Json(new_asset))
 } 
 
 #[derive(Deserialize)]
@@ -53,24 +43,65 @@ struct UpdateAssetRequest {
 
 #[tracing::instrument(skip_all)]
 async fn update_asset(
-    _admin: AdminAuth,
-    state: State<AppState>,
+    _: AdminAuth,
+    repository: Repository,
     Json(request): Json<UpdateAssetRequest>,
 ) -> Result<Json<Asset>, AppError> {
-    let mut assets = state.assets.lock().await;
+    match repository
+        .update_asset(request.id, request.name, request.unit_value)
+        .await?
+       {
+        Some(update_asset) => Ok(Json(update_asset)),
+        None => Err(AppError::AssetDoesNotExist),
+       }
+}
 
-    // Buscando o ativo (parênteses corrigidos aqui 👇)
-    let Some(existing_asset) = assets.get_mut(&request.id) else {
-        return Err(AppError::AssetDoesNotExist);
+#[cfg(test)]
+mod tests {
+use sqlx::PgPool;
+use super::*;
+
+    #[sqlx::test]
+    async fn test_create_asset(db: PgPool) {
+      let request = CreateAssetRequest {
+        name: "Teste".to_string(), 
+        unit_value: 100.0,
     };
 
-    if let Some(new_name) = request.name {
-        existing_asset.name = new_name;
+      let Json(new_asset) =  create_asset(AdminAuth, db.into(), Json(request)).await.expect("Success"); 
+
+        assert_eq!(new_asset.id, 1);
+        assert_eq!(new_asset.name, "Teste");
+        assert_eq!(new_asset.unit_value, 100.0);
+
+        insta::assert_json_snapshot!(new_asset);
     }
 
-    if let Some(new_unit_value) = request.unit_value {
-        existing_asset.unit_value = new_unit_value;
+    #[sqlx::test(fixtures("bitcoin_asset"))]
+    async  fn test_list_assets(db: PgPool) {
+       let Json(assets) = list_assets(db.into()).await.expect("Success");
+
+       assert_eq!(assets.len(), 1);
+       assert_eq!(assets[0].name, "Bitcoin");
+
+       insta::assert_json_snapshot!(assets);
     }
 
-    Ok(Json(existing_asset.clone()))
+    #[sqlx::test(fixtures("bitcoin_asset"))]
+      async fn test_update_asset(db: PgPool) {
+      let request = UpdateAssetRequest {
+        id: 1,
+        name: Some("Teste de update".to_string()),
+        unit_value: Some(300.0),
+      };
+
+      let Json(new_asset) =  update_asset(AdminAuth, db.into(), Json(request)).await.expect("Success"); 
+
+        assert_eq!(new_asset.id, 1);
+        assert_eq!(new_asset.name, "Teste de update");
+        assert_eq!(new_asset.unit_value, 300.0);
+
+        insta::assert_json_snapshot!(new_asset);
+    }
+
 }
