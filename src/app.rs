@@ -6,7 +6,7 @@ use tokio::{net::TcpListener, sync::Mutex};
 use tracing::info;
 use tracing_subscriber::{Layer, fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{models::Asset};
+use crate::{models::Asset, routes};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -40,12 +40,13 @@ impl App {
 
     let state = AppState::new().await?;
 
-    let listener = TcpListener::bind("0.0.0.0:3000").await?;
+    let listener = TcpListener::bind("0.0.0.0:8000").await?;
     let router = Router::new()
-    .nest("/api", crate::routes::api::router())
+    .nest("/api", routes::api::router())
+    .merge(routes::web::router())
     .with_state(state);
 
-    info!("Servidor rodando em http://localhost:3000");
+    info!("Servidor rodando em http://localhost:8000");
     axum::serve(listener, router).await?;
     Ok(())
     }

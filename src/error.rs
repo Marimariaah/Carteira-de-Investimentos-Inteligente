@@ -15,9 +15,12 @@ pub enum AppError {
 
     #[error("This username is already registered")]
     UsernameTaken,
-
+    
     #[error(transparent)]
     DatabaseError(#[from] sqlx::Error),
+
+    #[error(transparent)]
+    Template(#[from] askama::Error),
 }
 
 #[derive(Serialize)]
@@ -31,11 +34,11 @@ impl IntoResponse for AppError {
             error: self.to_string(),
         };
         let status = match self {
-            Self::MissingAuthorization => axum::http::StatusCode::BAD_REQUEST,
+            Self::UsernameTaken => axum::http::StatusCode::BAD_REQUEST,
             Self::InvalidCredentials => axum::http::StatusCode::UNAUTHORIZED,
             Self::AssetDoesNotExist => axum::http::StatusCode::NOT_FOUND,
-            Self::DatabaseError(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Self::UsernameTaken => axum::http::StatusCode::BAD_REQUEST,
+            Self::MissingAuthorization => axum::http::StatusCode::BAD_REQUEST,
+            Self::DatabaseError(_) | Self::Template(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(error_response)).into_response()
     }
