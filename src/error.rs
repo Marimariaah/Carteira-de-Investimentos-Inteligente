@@ -13,6 +13,9 @@ pub enum AppError {
     #[error("Asset does not exist")]
     AssetDoesNotExist,
 
+    #[error("This username is already registered")]
+    UsernameTaken,
+
     #[error(transparent)]
     DatabaseError(#[from] sqlx::Error),
 }
@@ -32,6 +35,7 @@ impl IntoResponse for AppError {
             Self::InvalidCredentials => axum::http::StatusCode::UNAUTHORIZED,
             Self::AssetDoesNotExist => axum::http::StatusCode::NOT_FOUND,
             Self::DatabaseError(_) => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UsernameTaken => axum::http::StatusCode::BAD_REQUEST,
         };
         (status, Json(error_response)).into_response()
     }
